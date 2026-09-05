@@ -1,0 +1,24 @@
+---
+- name: Install fail2ban
+  apt:
+    name: fail2ban
+    state: present
+    update_cache: true
+
+- name: Configure sshd jail
+  copy:
+    dest: /etc/fail2ban/jail.local
+    content: |
+      [sshd]
+      enabled = true
+      port    = ssh
+      maxretry = 5
+      bantime  = 1800
+      findtime = 600
+  notify: restart fail2ban
+
+- name: Ensure fail2ban is enabled and running
+  service:
+    name: fail2ban
+    state: started
+    enabled: true

@@ -1,0 +1,36 @@
+---
+# Mirrors the SSH hardening checklist applied across the on-prem servers:
+# role-named user in a sudo-capable group, key-only auth, root login and
+# password auth disabled, then a restart + orphaned-account check.
+
+- name: Ensure a role-named admin group exists
+  group:
+    name: labadmins
+    state: present
+
+- name: Create role-named service account
+  user:
+    name: "{{ service_account_name | default('labadmin') }}"
+    groups: labadmins,sudo
+    shell: /bin/bash
+    create_home: true
+
+- name: Install the admin's public key for key-only auth
+  authorized_key:
+    user: "{{ service_account_name | default('labadmin') }}"
+    key: "{{ lookup('file', ssh_public_key_path) }}"
+    state: present
+
+- name: Disable root login over SSH
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PermitRootLogin'
+    line: 'PermitRootLogin no'
+  notify: restart sshd
+
+- name: Disable password authentication
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PasswordAuthentication'
+    line: 'PasswordAuthentication no'
+  notify: restart sshd

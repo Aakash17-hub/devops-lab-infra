@@ -1,0 +1,7 @@
+---
+- name: Harden all lab hosts
+  hosts: all
+  become: true
+  roles:
+    - ssh-hardening
+    - fail2ban

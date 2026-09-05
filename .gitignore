@@ -1,0 +1,24 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+crash.log
+crash.*.log
+.terraform.lock.hcl
+
+# SSH keys and secrets
+*.pem
+*.key
+id_rsa*
+*.ppk
+
+# Ansible
+ansible/inventory.ini
+*.retry
+
+# OS / editor
+.DS_Store
+.vscode/
+*.swp
