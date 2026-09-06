@@ -28,11 +28,11 @@ resource "aws_instance" "bastion" {
 }
 
 resource "aws_instance" "app_server" {
-  ami                     = data.aws_ami.ubuntu.id
-  instance_type           = var.instance_type
-  subnet_id               = aws_subnet.private.id
-  vpc_security_group_ids  = [aws_security_group.private.id]
-  key_name                = var.key_name
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = var.instance_type
+  subnet_id              = aws_subnet.private.id
+  vpc_security_group_ids = [aws_security_group.private.id]
+  key_name               = var.key_name
 
   tags = {
     Name = "${var.project_name}-app-server"
@@ -41,11 +41,11 @@ resource "aws_instance" "app_server" {
 }
 
 resource "aws_instance" "git_server" {
-  ami                     = data.aws_ami.ubuntu.id
-  instance_type           = var.instance_type
-  subnet_id               = aws_subnet.private.id
-  vpc_security_group_ids  = [aws_security_group.private.id]
-  key_name                = var.key_name
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = var.instance_type
+  subnet_id              = aws_subnet.private.id
+  vpc_security_group_ids = [aws_security_group.private.id]
+  key_name               = var.key_name
 
   tags = {
     Name = "${var.project_name}-git-server"
