@@ -1,0 +1,14 @@
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  tags: [app-server]
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  script:
+    - docker build -t test-devops-app:latest .
+    - docker rm -f test-devops-app || true
+    - docker run -d --name test-devops-app --restart unless-stopped -p 3000:3000 test-devops-app:latest
+    - sleep 3
+    - curl -f http://localhost:3000/health
