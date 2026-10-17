@@ -1,0 +1,401 @@
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        timeout(time: 15, unit: 'MINUTES')
+    }
+
+    parameters {
+        choice(
+            name: 'ACTION',
+            choices: ['deploy', 'rollback'],
+            description: 'deploy = build and release a new version; rollback = switch live traffic back to the previous slot'
+        )
+    }
+
+    environment {
+        APP_SERVER = 'ubuntu@10.0.2.37'
+        APP_DIR = '/opt/production-devops-app'
+        IMAGE_NAME = 'production-devops-app'
+        NGINX_CONFIG = '/etc/nginx/sites-available/production-devops-app'
+    }
+
+    stages {
+        stage('Transfer Source') {
+            when { expression { (params.ACTION ?: 'deploy') == 'deploy' } }
+            steps {
+                sshagent(credentials: ['app-server-ssh']) {
+                    sh '''
+                        set -eu
+
+                        ARCHIVE="${WORKSPACE}/../production-devops-app-source.tar.gz"
+
+                        tar czf "$ARCHIVE" \
+                            --exclude=.git \
+                            -C "$WORKSPACE" .
+
+                        scp "$ARCHIVE" \
+                            "$APP_SERVER:/tmp/production-devops-app-source.tar.gz"
+
+                        ssh "$APP_SERVER" \
+                            "mkdir -p '$APP_DIR' &&
+                             tar xzf /tmp/production-devops-app-source.tar.gz -C '$APP_DIR' &&
+                             rm -f /tmp/production-devops-app-source.tar.gz"
+
+                        rm -f "$ARCHIVE"
+                    '''
+                }
+            }
+        }
+
+        stage('Test Application') {
+            when { expression { (params.ACTION ?: 'deploy') == 'deploy' } }
+            steps {
+                sshagent(credentials: ['app-server-ssh']) {
+                    sh '''
+                        set -eu
+
+                        ssh "$APP_SERVER" \
+                            docker run --rm \
+                            -v "$APP_DIR:/app" \
+                            -w /app \
+                            node:22-alpine npm test
+                    '''
+                }
+            }
+        }
+
+        stage('Build Image') {
+            when { expression { (params.ACTION ?: 'deploy') == 'deploy' } }
+            steps {
+                sshagent(credentials: ['app-server-ssh']) {
+                    sh '''
+                        set -eu
+
+                        ssh "$APP_SERVER" \
+                            docker build \
+                            -t "$IMAGE_NAME:$BUILD_NUMBER" \
+                            "$APP_DIR"
+                    '''
+                }
+            }
+        }
+
+        stage('Blue-Green Deploy') {
+            when { expression { (params.ACTION ?: 'deploy') == 'deploy' } }
+            steps {
+                sshagent(credentials: ['app-server-ssh']) {
+                    sh '''
+                        set -eu
+
+                        ssh "$APP_SERVER" bash -s -- \
+                            "$BUILD_NUMBER" \
+                            "$IMAGE_NAME" \
+                            "$NGINX_CONFIG" \
+                            "$APP_DIR" <<'REMOTE'
+
+set -Eeuo pipefail
+
+BUILD="$1"
+IMAGE_NAME="$2"
+CONFIG="$3"
+APP_DIR="$4"
+
+BACKUP="/tmp/production-devops-app.nginx.backup.${BUILD}"
+TARGET_NAME=""
+SWITCH_ATTEMPTED=0
+
+rollback() {
+    echo "ERROR: Deployment failed; starting rollback."
+
+    if [ "$SWITCH_ATTEMPTED" -eq 1 ] && [ -f "$BACKUP" ]; then
+        sudo cp -f "$BACKUP" "$CONFIG"
+
+        if sudo nginx -t; then
+            sudo systemctl reload nginx
+        else
+            echo "CRITICAL: Restored Nginx config did not pass validation."
+            return 1
+        fi
+    fi
+
+    if [ -n "$TARGET_NAME" ]; then
+        docker rm -f "$TARGET_NAME" || true
+    fi
+
+    echo "Rollback procedure completed."
+}
+
+fail() {
+    rollback || true
+    exit 1
+}
+
+health_check() {
+    local URL="$1"
+    local EXPECTED_VERSION="$2"
+    local EXPECTED_ENV="$3"
+    local RESPONSE=""
+    local ATTEMPT
+
+    for ATTEMPT in $(seq 1 10); do
+        RESPONSE=$(curl -fsS --max-time 3 "$URL" 2>/dev/null || true)
+
+        if printf '%s' "$RESPONSE" |
+            EXPECTED_VERSION="$EXPECTED_VERSION" \
+            EXPECTED_ENV="$EXPECTED_ENV" \
+            python3 -c '
+import json, os, sys
+
+try:
+    data = json.load(sys.stdin)
+    valid = (
+        data.get("status") == "healthy"
+        and str(data.get("version")) == os.environ["EXPECTED_VERSION"]
+        and data.get("environment") == os.environ["EXPECTED_ENV"]
+    )
+    sys.exit(0 if valid else 1)
+except (ValueError, TypeError, KeyError):
+    sys.exit(1)
+'; then
+            echo "Health check passed: $URL"
+            echo "$RESPONSE"
+            return 0
+        fi
+
+        echo "Health check attempt $ATTEMPT/10 failed: $URL"
+        sleep 2
+    done
+
+    echo "Last health response: [$RESPONSE]"
+    return 1
+}
+
+# Identify the currently configured live slot.
+ACTIVE_PORT=$(
+    sudo grep -E '^[[:space:]]*proxy_pass[[:space:]]+http://127\\.0\\.0\\.1:1300[12];' "$CONFIG" |
+    tail -n 1 |
+    grep -oE '1300[12]' || true
+)
+
+if [ "$ACTIVE_PORT" != "13001" ] && [ "$ACTIVE_PORT" != "13002" ]; then
+    echo "ERROR: Could not safely identify the active Nginx upstream."
+    sudo grep -n 'proxy_pass' "$CONFIG" || true
+    exit 1
+fi
+
+if [ "$ACTIVE_PORT" = "13001" ]; then
+    TARGET_PORT="13002"
+    TARGET_ENV="Green"
+else
+    TARGET_PORT="13001"
+    TARGET_ENV="Blue"
+fi
+
+TARGET_NAME="production-devops-app-${TARGET_PORT}"
+
+echo "Current active port: $ACTIVE_PORT"
+echo "Target port: $TARGET_PORT"
+echo "Target environment: $TARGET_ENV"
+echo "Deploying build: $BUILD"
+
+# Save the exact current Nginx configuration before changing anything.
+sudo cp -f "$CONFIG" "$BACKUP"
+
+# Replace only the inactive deployment slot.
+docker rm -f "$TARGET_NAME" 2>/dev/null || true
+
+if ! docker run -d \
+    --name "$TARGET_NAME" \
+    --restart unless-stopped \
+    -p "127.0.0.1:${TARGET_PORT}:3000" \
+    -e "APP_VERSION=${BUILD}" \
+    -e "APP_ENV=${TARGET_ENV}" \
+    "$IMAGE_NAME:$BUILD"; then
+    fail
+fi
+
+# Verify the new candidate directly before sending traffic to it.
+if ! health_check \
+    "http://127.0.0.1:${TARGET_PORT}/health" \
+    "$BUILD" "$TARGET_ENV"; then
+    fail
+fi
+
+echo "Candidate passed health checks."
+
+# Change the Nginx upstream to the candidate slot.
+SWITCH_ATTEMPTED=1
+
+if ! sudo sed -E -i \
+    "s#127\\.0\\.0\\.1:1300[12]#127.0.0.1:${TARGET_PORT}#g" \
+    "$CONFIG"; then
+    fail
+fi
+
+if ! sudo nginx -t; then
+    fail
+fi
+
+if ! sudo systemctl reload nginx; then
+    fail
+fi
+
+# Verify the actual live route, retrying while Nginx workers settle.
+if ! health_check \
+    "http://127.0.0.1:8080/health" \
+    "$BUILD" "$TARGET_ENV"; then
+    fail
+fi
+
+echo "Deployment successful."
+echo "Live slot: $TARGET_ENV"
+echo "Live port: $TARGET_PORT"
+echo "Build: $BUILD"
+echo "Previous live slot retained for rollback."
+
+REMOTE
+                    '''
+                }
+            }
+        }
+
+        stage('Manual Rollback') {
+            when { expression { (params.ACTION ?: 'deploy') == 'rollback' } }
+            steps {
+                sshagent(credentials: ['app-server-ssh']) {
+                    sh '''
+                        set -eu
+
+                        ssh "$APP_SERVER" bash -s -- \
+                            "$NGINX_CONFIG" <<'ROLLBACK_REMOTE'
+
+set -Eeuo pipefail
+
+CONFIG="$1"
+BACKUP="/tmp/production-devops-app.nginx.rollback.backup"
+
+json_field() {
+    # usage: json_field URL FIELD
+    curl -fsS --max-time 3 "$1" 2>/dev/null |
+        python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    print(data.get(sys.argv[1], ""))
+except Exception:
+    print("")
+' "$2" || true
+}
+
+restore_config() {
+    echo "ERROR: Rollback verification failed; restoring previous Nginx config."
+    sudo cp -f "$BACKUP" "$CONFIG"
+    if sudo nginx -t; then
+        sudo systemctl reload nginx
+    else
+        echo "CRITICAL: Restored Nginx config did not pass validation."
+    fi
+    exit 1
+}
+
+# Identify the currently live slot.
+ACTIVE_PORT=$(
+    sudo grep -E '^[[:space:]]*proxy_pass[[:space:]]+http://127\\.0\\.0\\.1:1300[12];' "$CONFIG" |
+    tail -n 1 |
+    grep -oE '1300[12]' || true
+)
+
+if [ "$ACTIVE_PORT" != "13001" ] && [ "$ACTIVE_PORT" != "13002" ]; then
+    echo "ERROR: Could not safely identify the active Nginx upstream."
+    exit 1
+fi
+
+if [ "$ACTIVE_PORT" = "13001" ]; then
+    PREV_PORT="13002"
+else
+    PREV_PORT="13001"
+fi
+
+PREV_NAME="production-devops-app-${PREV_PORT}"
+
+echo "Live port now: $ACTIVE_PORT"
+echo "Rolling back to port: $PREV_PORT"
+
+# The previous slot must still be running.
+if ! docker ps --format '{{.Names}}' | grep -qx "$PREV_NAME"; then
+    echo "ERROR: Previous slot container $PREV_NAME is not running. Nothing to roll back to."
+    exit 1
+fi
+
+# The previous slot must be healthy before we send traffic to it.
+PREV_STATUS=$(json_field "http://127.0.0.1:${PREV_PORT}/health" status)
+PREV_VERSION=$(json_field "http://127.0.0.1:${PREV_PORT}/health" version)
+PREV_ENV=$(json_field "http://127.0.0.1:${PREV_PORT}/health" environment)
+
+if [ "$PREV_STATUS" != "healthy" ]; then
+    echo "ERROR: Previous slot is not healthy (status: [$PREV_STATUS]). Rollback aborted."
+    exit 1
+fi
+
+echo "Previous slot: version=$PREV_VERSION environment=$PREV_ENV"
+
+sudo cp -f "$CONFIG" "$BACKUP"
+
+sudo sed -E -i \
+    "s#127\\.0\\.0\\.1:1300[12]#127.0.0.1:${PREV_PORT}#g" \
+    "$CONFIG"
+
+if ! sudo nginx -t; then
+    restore_config
+fi
+
+if ! sudo systemctl reload nginx; then
+    restore_config
+fi
+
+# Verify that live traffic now serves the previous version.
+OK=0
+for ATTEMPT in $(seq 1 10); do
+    LIVE_STATUS=$(json_field "http://127.0.0.1:8080/health" status)
+    LIVE_VERSION=$(json_field "http://127.0.0.1:8080/health" version)
+
+    if [ "$LIVE_STATUS" = "healthy" ] && [ "$LIVE_VERSION" = "$PREV_VERSION" ]; then
+        OK=1
+        break
+    fi
+
+    echo "Live check attempt $ATTEMPT/10 failed (status=[$LIVE_STATUS] version=[$LIVE_VERSION])"
+    sleep 2
+done
+
+if [ "$OK" -ne 1 ]; then
+    restore_config
+fi
+
+echo "Rollback successful."
+echo "Live port: $PREV_PORT"
+echo "Live version: $PREV_VERSION"
+echo "Live slot: $PREV_ENV"
+
+ROLLBACK_REMOTE
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Pipeline SUCCESS.'
+        }
+        failure {
+            echo 'Pipeline FAILURE: inspect the stage logs and rollback messages.'
+        }
+        always {
+            echo 'Pipeline execution finished.'
+        }
+    }
+}

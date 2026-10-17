@@ -1,0 +1,232 @@
+Started by user Aakash Kumar Sahani
+
+Obtained Jenkinsfile from git http://10.0.2.116/aakash/production-devops-app.git
+[Pipeline] Start of Pipeline
+[Pipeline] node
+Running on Jenkins
+ in /var/lib/jenkins/workspace/test-devops-app-pipeline
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Declarative: Checkout SCM)
+[Pipeline] checkout
+The recommended git tool is: NONE
+using credential gitlab-read-repo
+ > git rev-parse --resolve-git-dir /var/lib/jenkins/workspace/test-devops-app-pipeline/.git # timeout=10
+Fetching changes from the remote Git repository
+ > git config remote.origin.url http://10.0.2.116/aakash/production-devops-app.git # timeout=10
+Fetching upstream changes from http://10.0.2.116/aakash/production-devops-app.git
+ > git --version # timeout=10
+ > git --version # 'git version 2.43.0'
+using GIT_ASKPASS to set credentials GitLab repositry access for Jenkins
+ > git fetch --tags --force --progress -- http://10.0.2.116/aakash/production-devops-app.git +refs/heads/*:refs/remotes/origin/* # timeout=10
+ > git rev-parse refs/remotes/origin/main^{commit} # timeout=10
+Checking out Revision df69521a12bf231210bd426e147073443c1da74d (refs/remotes/origin/main)
+ > git config core.sparsecheckout # timeout=10
+ > git checkout -f df69521a12bf231210bd426e147073443c1da74d # timeout=10
+Commit message: "Edit Jenkinsfile"
+ > git rev-list --no-walk 2d2d4b4b264525645a4d4742990aa5549c553f93 # timeout=10
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] withEnv
+[Pipeline] {
+[Pipeline] withEnv
+[Pipeline] {
+[Pipeline] timestamps
+[Pipeline] {
+[Pipeline] timeout
+09:12:10  Timeout set to expire in 15 min
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Transfer Source)
+[Pipeline] sshagent
+09:12:11  [ssh-agent] Using credentials ubuntu (SSH access to app server)
+09:12:11  $ ssh-agent
+09:12:11  SSH_AUTH_SOCK=/tmp/ssh-rY3deFnksMvN/agent.2682
+09:12:11  SSH_AGENT_PID=2686
+09:12:11  Running ssh-add (command line suppressed)
+09:12:11  [ssh-agent] Started.
+[Pipeline] {
+[Pipeline] sh
+09:12:11  + set -eu
+09:12:11  + ARCHIVE=/var/lib/jenkins/workspace/test-devops-app-pipeline/../production-devops-app-source.tar.gz
+09:12:11  + tar czf /var/lib/jenkins/workspace/test-devops-app-pipeline/../production-devops-app-source.tar.gz --exclude=.git -C /var/lib/jenkins/workspace/test-devops-app-pipeline .
+09:12:11  + scp /var/lib/jenkins/workspace/test-devops-app-pipeline/../production-devops-app-source.tar.gz ubuntu@10.0.2.37:/tmp/production-devops-app-source.tar.gz
+09:12:12  + ssh ubuntu@10.0.2.37 mkdir -p '/opt/production-devops-app' &&
+09:12:12                               tar xzf /tmp/production-devops-app-source.tar.gz -C '/opt/production-devops-app' &&
+09:12:12                               rm -f /tmp/production-devops-app-source.tar.gz
+09:12:12  + rm -f /var/lib/jenkins/workspace/test-devops-app-pipeline/../production-devops-app-source.tar.gz
+[Pipeline] }
+09:12:12  $ ssh-agent -k
+09:12:12  unset SSH_AUTH_SOCK;
+09:12:12  unset SSH_AGENT_PID;
+09:12:12  echo Agent pid 2686 killed;
+09:12:12  [ssh-agent] Stopped.
+[Pipeline] // sshagent
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Test Application)
+[Pipeline] sshagent
+09:12:12  [ssh-agent] Using credentials ubuntu (SSH access to app server)
+09:12:12  $ ssh-agent
+09:12:12  SSH_AUTH_SOCK=/tmp/ssh-cF3T76RpkwtP/agent.2717
+09:12:12  SSH_AGENT_PID=2721
+09:12:12  Running ssh-add (command line suppressed)
+09:12:12  [ssh-agent] Started.
+[Pipeline] {
+[Pipeline] sh
+09:12:13  + set -eu
+09:12:13  + ssh ubuntu@10.0.2.37 docker run --rm -v /opt/production-devops-app:/app -w /app node:22-alpine npm test
+09:12:14  
+09:12:14  > production-devops-app@1.0.0 test
+09:12:14  > node --test
+09:12:14  
+09:12:14  TAP version 13
+09:12:14  # Subtest: application responds correctly and health check passes
+09:12:14  ok 1 - application responds correctly and health check passes
+09:12:14    ---
+09:12:14    duration_ms: 129.994389
+09:12:14    type: 'test'
+09:12:14    ...
+09:12:14  1..1
+09:12:14  # tests 1
+09:12:14  # suites 0
+09:12:14  # pass 1
+09:12:14  # fail 0
+09:12:14  # cancelled 0
+09:12:14  # skipped 0
+09:12:14  # todo 0
+09:12:14  # duration_ms 323.06754
+[Pipeline] }
+09:12:14  $ ssh-agent -k
+09:12:14  unset SSH_AUTH_SOCK;
+09:12:14  unset SSH_AGENT_PID;
+09:12:14  echo Agent pid 2721 killed;
+09:12:14  [ssh-agent] Stopped.
+[Pipeline] // sshagent
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Build Image)
+[Pipeline] sshagent
+09:12:15  [ssh-agent] Using credentials ubuntu (SSH access to app server)
+09:12:15  $ ssh-agent
+09:12:15  SSH_AUTH_SOCK=/tmp/ssh-YcKyELhIourr/agent.2747
+09:12:15  SSH_AGENT_PID=2751
+09:12:15  Running ssh-add (command line suppressed)
+09:12:15  [ssh-agent] Started.
+[Pipeline] {
+[Pipeline] sh
+09:12:15  + set -eu
+09:12:15  + ssh ubuntu@10.0.2.37 docker build -t production-devops-app:30 /opt/production-devops-app
+09:12:15  DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
+09:12:15              Install the buildx component to build images with BuildKit:
+09:12:15              https://docs.docker.com/go/buildx/
+09:12:15  
+09:12:15  Sending build context to Docker daemon  24.58kB
+09:12:15  
+09:12:15  Step 1/9 : FROM node:22-alpine
+09:12:15   ---> 0a7108bf6c7b
+09:12:15  Step 2/9 : ENV NODE_ENV=production
+09:12:15   ---> Using cache
+09:12:15   ---> 3ad785f8bfa6
+09:12:15  Step 3/9 : WORKDIR /app
+09:12:15   ---> Using cache
+09:12:15   ---> cba15b541de7
+09:12:15  Step 4/9 : COPY package.json ./
+09:12:15   ---> Using cache
+09:12:15   ---> d0ebec980b13
+09:12:15  Step 5/9 : COPY app.js ./
+09:12:15   ---> Using cache
+09:12:15   ---> ed0e93735a0c
+09:12:15  Step 6/9 : COPY tests ./tests
+09:12:15   ---> Using cache
+09:12:15   ---> 6e18b8afed61
+09:12:15  Step 7/9 : EXPOSE 3000
+09:12:15   ---> Using cache
+09:12:15   ---> 842b8edde46f
+09:12:15  Step 8/9 : USER node
+09:12:15   ---> Using cache
+09:12:15   ---> f5df3a523bd7
+09:12:15  Step 9/9 : CMD ["npm", "start"]
+09:12:15   ---> Using cache
+09:12:15   ---> aef0ca817d33
+09:12:15  Successfully built aef0ca817d33
+09:12:15  Successfully tagged production-devops-app:30
+[Pipeline] }
+09:12:15  $ ssh-agent -k
+09:12:15  unset SSH_AUTH_SOCK;
+09:12:15  unset SSH_AGENT_PID;
+09:12:15  echo Agent pid 2751 killed;
+09:12:15  [ssh-agent] Stopped.
+[Pipeline] // sshagent
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Blue-Green Deploy)
+[Pipeline] sshagent
+09:12:16  [ssh-agent] Using credentials ubuntu (SSH access to app server)
+09:12:16  $ ssh-agent
+09:12:16  SSH_AUTH_SOCK=/tmp/ssh-CUmMlnjD6HZC/agent.2773
+09:12:16  SSH_AGENT_PID=2777
+09:12:16  Running ssh-add (command line suppressed)
+09:12:16  [ssh-agent] Started.
+[Pipeline] {
+[Pipeline] sh
+09:12:16  + set -eu
+09:12:16  + ssh ubuntu@10.0.2.37 bash -s -- 30 production-devops-app /etc/nginx/sites-available/production-devops-app /opt/production-devops-app
+09:12:16  Current active port: 13001
+09:12:16  Target port: 13002
+09:12:16  Target environment: Green
+09:12:16  Deploying build: 30
+09:12:16  production-devops-app-13002
+09:12:16  ce13fc78140a624bb6481512067357dc1c9d070d23a57b6f5703a8be38497e7c
+09:12:17  Health check attempt 1/10 failed: http://127.0.0.1:13002/health
+09:12:19  Health check passed: http://127.0.0.1:13002/health
+09:12:19  {"status":"healthy","version":"30","environment":"Green"}
+09:12:19  Candidate passed health checks.
+09:12:19  nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+09:12:19  nginx: configuration file /etc/nginx/nginx.conf test is successful
+09:12:19  Health check attempt 1/10 failed: http://127.0.0.1:8080/health
+09:12:21  Health check passed: http://127.0.0.1:8080/health
+09:12:21  {"status":"healthy","version":"30","environment":"Green"}
+09:12:21  Deployment successful.
+09:12:21  Live slot: Green
+09:12:21  Live port: 13002
+09:12:21  Build: 30
+09:12:21  Previous live slot retained for rollback.
+[Pipeline] }
+09:12:21  $ ssh-agent -k
+09:12:21  unset SSH_AUTH_SOCK;
+09:12:21  unset SSH_AGENT_PID;
+09:12:21  echo Agent pid 2777 killed;
+09:12:21  [ssh-agent] Stopped.
+[Pipeline] // sshagent
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Manual Rollback)
+Stage "Manual Rollback" skipped due to when conditional
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Declarative: Post Actions)
+[Pipeline] echo
+09:12:21  Pipeline execution finished.
+[Pipeline] echo
+09:12:21  Pipeline SUCCESS.
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] }
+[Pipeline] // timeout
+[Pipeline] }
+[Pipeline] // timestamps
+[Pipeline] }
+[Pipeline] // withEnv
+[Pipeline] }
+[Pipeline] // withEnv
+[Pipeline] }
+[Pipeline] // node
+[Pipeline] End of Pipeline
+Finished: SUCCESS
