@@ -1,0 +1,114 @@
+Started by user Aakash Kumar Sahani
+
+Obtained Jenkinsfile from git http://10.0.2.116/aakash/production-devops-app.git
+[Pipeline] Start of Pipeline
+[Pipeline] node
+Running on Jenkins
+ in /var/lib/jenkins/workspace/test-devops-app-pipeline
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Declarative: Checkout SCM)
+[Pipeline] checkout
+The recommended git tool is: NONE
+using credential gitlab-read-repo
+ > git rev-parse --resolve-git-dir /var/lib/jenkins/workspace/test-devops-app-pipeline/.git # timeout=10
+Fetching changes from the remote Git repository
+ > git config remote.origin.url http://10.0.2.116/aakash/production-devops-app.git # timeout=10
+Fetching upstream changes from http://10.0.2.116/aakash/production-devops-app.git
+ > git --version # timeout=10
+ > git --version # 'git version 2.43.0'
+using GIT_ASKPASS to set credentials GitLab repositry access for Jenkins
+ > git fetch --tags --force --progress -- http://10.0.2.116/aakash/production-devops-app.git +refs/heads/*:refs/remotes/origin/* # timeout=10
+ > git rev-parse refs/remotes/origin/main^{commit} # timeout=10
+Checking out Revision df69521a12bf231210bd426e147073443c1da74d (refs/remotes/origin/main)
+ > git config core.sparsecheckout # timeout=10
+ > git checkout -f df69521a12bf231210bd426e147073443c1da74d # timeout=10
+Commit message: "Edit Jenkinsfile"
+ > git rev-list --no-walk df69521a12bf231210bd426e147073443c1da74d # timeout=10
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] withEnv
+[Pipeline] {
+[Pipeline] withEnv
+[Pipeline] {
+[Pipeline] timestamps
+[Pipeline] {
+[Pipeline] timeout
+09:13:53  Timeout set to expire in 15 min
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Transfer Source)
+Stage "Transfer Source" skipped due to when conditional
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Test Application)
+Stage "Test Application" skipped due to when conditional
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Build Image)
+Stage "Build Image" skipped due to when conditional
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Blue-Green Deploy)
+Stage "Blue-Green Deploy" skipped due to when conditional
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Manual Rollback)
+[Pipeline] sshagent
+09:13:54  [ssh-agent] Using credentials ubuntu (SSH access to app server)
+09:13:54  $ ssh-agent
+09:13:54  SSH_AUTH_SOCK=/tmp/ssh-yKPZdqUCxrXl/agent.2901
+09:13:54  SSH_AGENT_PID=2905
+09:13:54  Running ssh-add (command line suppressed)
+09:13:54  [ssh-agent] Started.
+[Pipeline] {
+[Pipeline] sh
+09:13:54  + set -eu
+09:13:54  + ssh ubuntu@10.0.2.37 bash -s -- /etc/nginx/sites-available/production-devops-app
+09:13:55  Live port now: 13002
+09:13:55  Rolling back to port: 13001
+09:13:55  Previous slot: version=29 environment=Blue
+09:13:55  nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+09:13:55  nginx: configuration file /etc/nginx/nginx.conf test is successful
+09:13:55  Live check attempt 1/10 failed (status=[healthy] version=[30])
+09:13:58  Rollback successful.
+09:13:58  Live port: 13001
+09:13:58  Live version: 29
+09:13:58  Live slot: Blue
+[Pipeline] }
+09:13:58  $ ssh-agent -k
+09:13:58  unset SSH_AUTH_SOCK;
+09:13:58  unset SSH_AGENT_PID;
+09:13:58  echo Agent pid 2905 killed;
+09:13:58  [ssh-agent] Stopped.
+[Pipeline] // sshagent
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Declarative: Post Actions)
+[Pipeline] echo
+09:13:58  Pipeline execution finished.
+[Pipeline] echo
+09:13:58  Pipeline SUCCESS.
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] }
+[Pipeline] // timeout
+[Pipeline] }
+[Pipeline] // timestamps
+[Pipeline] }
+[Pipeline] // withEnv
+[Pipeline] }
+[Pipeline] // withEnv
+[Pipeline] }
+[Pipeline] // node
+[Pipeline] End of Pipeline
+Finished: SUCCESS
