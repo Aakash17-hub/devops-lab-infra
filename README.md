@@ -115,43 +115,78 @@ something to leave running.
 All hostnames, IP ranges, and domains here are placeholders for a portfolio
 project and do not correspond to any real environment.
 
-v2: Self-hosted GitLab + CI/CD on a segmented AWS VPC
+---
+
+## v2: Self-hosted GitLab + CI/CD on a segmented AWS VPC
+
 A second build of the lab, built manually in the AWS Console first (SAA practice), with GitLab CE replacing Gitea. Every push to `main` automatically rebuilds and redeploys the app.
-Architecture
-Component	Detail
-Region / VPC	ap-southeast-1, `devops-lab-vpc` (10.0.0.0/16)
-`public-subnet`	10.0.1.0/24, routes to IGW; hosts `bastion` and the NAT gateway
-`private-subnet`	10.0.2.0/24, routes to NAT gateway; hosts the app and git servers
-`bastion`	t3.micro, only SSH entry point, restricted to my IP
-`app-server`	t3.micro, Docker + GitLab Runner (shell executor), runs `hello-devops-app`
-`git-server`	c7i-flex.large (4 GB RAM), 30 GB disk, 2 GB swap, GitLab CE (Omnibus)
-Security groups	`bastion-sg` (22 from my IP), `private-sg` (22 and 80 from `bastion-sg`, self-referencing rule for internal traffic)
+
+### Architecture
+
+| Component | Detail |
+|---|---|
+| Region / VPC | ap-southeast-1, `devops-lab-vpc` (10.0.0.0/16) |
+| `public-subnet` | 10.0.1.0/24, routes to IGW; hosts `bastion` and the NAT gateway |
+| `private-subnet` | 10.0.2.0/24, routes to NAT gateway; hosts the app and git servers |
+| `bastion` | t3.micro, only SSH entry point, restricted to my IP |
+| `app-server` | t3.micro, Docker + GitLab Runner (shell executor), runs `hello-devops-app` |
+| `git-server` | c7i-flex.large (4 GB RAM), 30 GB disk, 2 GB swap, GitLab CE (Omnibus) |
+| Security groups | `bastion-sg` (22 from my IP), `private-sg` (22 and 80 from `bastion-sg`, self-referencing rule for internal traffic) |
+
 Private servers have no public IPs. Access is through the bastion with SSH `ProxyCommand`, and the GitLab UI is reached through an SSH tunnel (`-L 8080:localhost:80`).
-Hardening (all 3 servers)
-`labadmins` group
-Root login and password authentication disabled via `/etc/ssh/sshd_config.d/10-hardening.conf`
-fail2ban with an `sshd` jail
-Unattended kernel updates applied and servers rebooted
-CI/CD flow
+
+### Hardening (all 3 servers)
+
+- `labadmins` group
+- Root login and password authentication disabled via `/etc/ssh/sshd_config.d/10-hardening.conf`
+- fail2ban with an `sshd` jail
+- Unattended kernel updates applied and servers rebooted
+
+### CI/CD flow
+
 ```
 git push (app-server) -> GitLab (git-server) -> GitLab Runner (app-server)
    -> docker build -> replace container -> curl /health check
 ```
+
 Pipeline definition: `.gitlab-ci.yml`. A change from `v1` to `v2` in `app.js` went live with no manual steps.
-Proof
-	
-VPC resource map	![vpc](docs/screenshots/v2/01-vpc-resource-map.png)
-EC2 instances	![ec2](docs/screenshots/v2/02-ec2-instances.png)
-Pipelines	![pipelines](docs/screenshots/v2/03-gitlab-pipelines.png)
-Deploy job log	![job](docs/screenshots/v2/04-job-log.png)
-Runner online	![runner](docs/screenshots/v2/05-runner-online.png)
-Live app (v2)	![curl](docs/screenshots/v2/06-curl-output.png)
-Real issues hit and fixed
+
+### Proof
+
+| | |
+|---|---|
+| VPC resource map | ![vpc](docs/screenshots/v2/01-vpc-resource-map.png) |
+| EC2 instances | ![ec2](docs/screenshots/v2/02-ec2-instances.png) |
+| Pipelines | ![pipelines](docs/screenshots/v2/03-gitlab-pipelines.png) |
+| Deploy job log | ![job](docs/screenshots/v2/04-job-log.png) |
+| Runner online | ![runner](docs/screenshots/v2/05-runner-online.png) |
+| Live app (v2) | ![curl](docs/screenshots/v2/06-curl-output.png) |
+
+### Real issues hit and fixed
+
 Full details in `docs/BUILD_LOG_v2.md`. Highlights:
-SSH `Permission denied (publickey)`: the `.pem` did not match the key pair attached to the instance
-`ssh -J` does not reuse the `-i` key for the jump host, so `ProxyCommand` was used
-GitLab consumed ~3 GB of a 4 GB box; bundled Prometheus and other services were disabled to bring available memory from 773 MB to 1.6 GB
-GitLab redirected the browser to its private `external_url`, which timed out through the tunnel
-Auto DevOps created a failing default pipeline on the first commit
-Next
-Jenkins, Prometheus/Grafana/Alertmanager, MariaDB replication + Redis, Kubernetes (minikube, then an EKS proof of concept), Ansible playbooks, and Terraform.
+
+- SSH `Permission denied (publickey)`: the `.pem` did not match the key pair attached to the instance
+- `ssh -J` does not reuse the `-i` key for the jump host, so `ProxyCommand` was used
+- GitLab consumed ~3 GB of a 4 GB box; bundled Prometheus and other services were disabled to bring available memory from 773 MB to 1.6 GB
+- GitLab redirected the browser to its private `external_url`, which timed out through the tunnel
+- Auto DevOps created a failing default pipeline on the first commit
+
+### Phase 7: Jenkins blue-green deploy with one-click rollback
+
+Jenkins pulls the `Jenkinsfile` from GitLab (Pipeline script from SCM) and deploys the app to `app-server` with zero downtime. It runs alongside the GitLab CI pipeline above as an alternative deployment strategy.
+
+| Stage | What it does |
+|---|---|
+| Test | `npm test` inside a `node:22-alpine` container |
+| Build | `docker build`, image tagged with the build number |
+| Blue-Green Deploy | New container starts on the idle slot (13001/13002), passes a health check, then Nginx is switched and reloaded; the old slot stays up |
+| Manual Rollback | `ACTION=rollback` flips Nginx back to the previous slot and verifies it against `/health` |
+
+Verified: polling `/health` every 0.2 s during a deploy and during a rollback returned only HTTP 200. Rollback from build 30 to build 29 confirmed live.
+
+Full write-up, screenshots and logs: [`docs/phase-7-jenkins/`](docs/phase-7-jenkins/README.md)
+
+### Next
+
+Prometheus/Grafana/Alertmanager, MariaDB replication + Redis, Kubernetes (minikube, then an EKS proof of concept), Ansible playbooks, and Terraform.
