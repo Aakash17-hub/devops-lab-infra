@@ -4,17 +4,25 @@ on:
   pull_request:
     paths:
       - 'terraform/**'
+      - 'terraform-v2/**'
+      - '.github/workflows/terraform-ci.yml'
   push:
     branches: [main]
     paths:
       - 'terraform/**'
+      - 'terraform-v2/**'
+      - '.github/workflows/terraform-ci.yml'
 
 jobs:
   validate:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [terraform, terraform-v2]
     defaults:
       run:
-        working-directory: terraform
+        working-directory: ${{ matrix.dir }}
     steps:
       - uses: actions/checkout@v4
 

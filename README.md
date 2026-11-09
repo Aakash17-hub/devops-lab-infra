@@ -35,7 +35,8 @@ each resource does — which is also exactly what the SAA exam tests.
   automatically rebuilds the Docker image and redeploys the container, with
   zero manual `docker` commands after setup
 - **Infrastructure as Code** — the same topology reproduced in Terraform,
-  with a GitHub Actions job that validates it on every push
+  with a GitHub Actions job that runs `fmt`, `init` and `validate` on pull
+  requests and on pushes to `main` that change the Terraform code
 - **Debugging discipline** — every real issue hit along the way (security
   group gaps, SSH config mistakes, a corrupted config file, dynamic-IP
   lockouts) is documented with its actual root cause and fix in
@@ -79,8 +80,9 @@ after the initial setup. Full details in
 ## Repo layout
 
 ```
-terraform/   VPC, subnets, security groups, EC2 instances (IaC version)
-ansible/     SSH-hardening and fail2ban roles (IaC version)
+terraform/      VPC, subnets, security groups, EC2 instances (IaC version of the original lab)
+terraform-v2/   the whole lab as it runs today (5 instances), adopted with `import`; see its README
+ansible/        SSH-hardening and fail2ban roles (IaC version)
 docs/        Full build log — all 4 phases, every issue and its real fix
 ```
 
@@ -104,6 +106,7 @@ terraform plan -var="key_name=YOUR_KEY_PAIR"
 terraform apply
 
 cd ../ansible
+cp inventory.ini.example inventory.ini   # then fill in your hosts
 ansible-playbook -i inventory.ini site.yml
 ```
 
@@ -131,7 +134,11 @@ A second build of the lab, built manually in the AWS Console first (SAA practice
 | `bastion` | t3.micro, only SSH entry point, restricted to my IP |
 | `app-server` | t3.micro, Docker + GitLab Runner (shell executor), runs `hello-devops-app` |
 | `git-server` | c7i-flex.large (4 GB RAM), 30 GB disk, 2 GB swap, GitLab CE (Omnibus) |
-| Security groups | `bastion-sg` (22 from my IP), `private-sg` (22 and 80 from `bastion-sg`, self-referencing rule for internal traffic) |
+| `jenkins-server` | t3.small, private subnet, Jenkins (deploys the app above and ShopSphere) |
+| `shopsphere-minikube` | m7i-flex.large, public subnet, Minikube host for [ShopSphere](https://github.com/Aakash17-hub/shopsphere) |
+| Security groups | `Bastion-SG` (22 from my IP), `Private-SG` (22 and 80 from the bastion and from the Minikube host, self-referencing rule for internal traffic), `shopsphere-sg` (22 from the bastion and from the Jenkins server) |
+
+The NAT gateway is deleted between sessions to save cost. The lab currently runs without one, so the private servers have no internet access until it is recreated (`enable_nat` in `terraform-v2/`).
 
 Private servers have no public IPs. Access is through the bastion with SSH `ProxyCommand`, and the GitLab UI is reached through an SSH tunnel (`-L 8080:localhost:80`).
 
@@ -187,6 +194,15 @@ Verified: polling `/health` every 0.2 s during a deploy and during a rollback re
 
 Full write-up, screenshots and logs: [`docs/phase-7-jenkins/`](docs/phase-7-jenkins/README.md)
 
+### Terraform for the lab as it runs today
+
+[`terraform-v2/`](terraform-v2/README.md) describes the whole current lab (VPC, subnets, route tables, three security groups, five instances). The existing resources were **imported**, not recreated: the plan showed 17 imports and 5 in-place changes (termination protection only), and a second plan after the apply showed no changes. A from-scratch rebuild has not been tested yet.
+
+### Related projects
+
+- [ShopSphere](https://github.com/Aakash17-hub/shopsphere): Kubernetes (Minikube on this lab's EC2), GitLab CI and a Jenkins deploy pipeline, Prometheus/Grafana/Alertmanager with Slack alerts, an Ansible playbook for the Minikube host
+- [boutique-eks](https://github.com/Aakash17-hub/boutique-eks): GitLab to Jenkins to ECR to EKS pipeline with scoped RBAC and automatic rollback
+
 ### Next
 
-Prometheus/Grafana/Alertmanager, MariaDB replication + Redis, Kubernetes (minikube, then an EKS proof of concept), Ansible playbooks, and Terraform.
+MariaDB replication and Redis, centralised logging, Ansible roles for the servers (hardening, GitLab, Jenkins; only the Minikube host has a playbook so far), and a from-scratch rebuild of the lab with Terraform and Ansible.
