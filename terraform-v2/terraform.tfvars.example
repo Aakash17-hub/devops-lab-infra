@@ -1,0 +1,4 @@
+# Copy to terraform.tfvars (gitignored) and fill in.
+ami_id     = "ami-xxxxxxxxxxxxxxxxx" # Ubuntu 24.04 in ap-southeast-1
+key_name   = "your-key-pair-name"
+admin_cidr = "203.0.113.10/32"       # your public IP
