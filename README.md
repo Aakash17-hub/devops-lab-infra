@@ -83,7 +83,8 @@ after the initial setup. Full details in
 terraform/      VPC, subnets, security groups, EC2 instances (IaC version of the original lab)
 terraform-v2/   the whole lab as it runs today (5 instances), adopted with `import`; see its README
 ansible/        SSH-hardening and fail2ban roles (IaC version)
-docs/        Full build log — all 4 phases, every issue and its real fix
+docs/           build logs (v1 + v2), Phase 7 Jenkins blue-green docs, screenshots
+.github/        GitHub Actions: terraform fmt/validate for terraform/ and terraform-v2/
 ```
 
 ## Screenshots
