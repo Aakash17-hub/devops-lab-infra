@@ -83,8 +83,9 @@ after the initial setup. Full details in
 
 ```
 terraform/      VPC, subnets, security groups, EC2 instances (IaC version of the original lab)
-terraform-v2/   the whole lab as it runs today (5 instances + Jenkins IAM role), adopted with `import`; see its README
+terraform-v2/   the whole v2 lab (network, 5 instances, Jenkins IAM role), portable to any account; see its README
 ansible/        roles for the whole v2 lab: hardening baseline (all hosts), app host, GitLab, Jenkins
+REBUILD.md      runbook: empty AWS account to a working lab, including the GitLab and Jenkins restores
 docs/           build logs (v1 + v2), Phase 7 Jenkins blue-green docs, screenshots
 .github/        GitHub Actions: terraform fmt/validate for terraform/ and terraform-v2/
 ```
@@ -110,6 +111,9 @@ terraform apply
 
 # Ansible runs on the bastion; see "Ansible for every server" below
 ```
+
+The full rebuild, including restoring GitLab and Jenkins from backups, is in
+[`REBUILD.md`](REBUILD.md).
 
 Remember to `terraform destroy` when you're done — this is a demo lab, not
 something to leave running.
@@ -201,7 +205,7 @@ Full write-up, screenshots and logs: [`docs/phase-7-jenkins/`](docs/phase-7-jenk
 
 The Jenkins server's IAM role (`jenkins-ec2-role`: `AmazonEC2ContainerRegistryPowerUser` plus an inline policy for `eks:DescribeCluster` and `eks:ListClusters`) and its instance profile were adopted the same way later (4 imports, then no changes).
 
-A from-scratch rebuild has not been tested yet.
+Since then the code has been made portable (AMI looked up from Canonical, key pair created from a public key, admin IP detected on every plan, AZ taken from the region), and on 13 Nov 2026 the whole lab was destroyed and rebuilt from it. See [Rebuild from scratch](#rebuild-from-scratch-13-nov-2026) below.
 
 ### Ansible for every server
 
@@ -236,7 +240,33 @@ ansible-playbook -i inventory.ini site.yml --check --diff
 ansible-playbook -i inventory.ini site.yml
 ```
 
-**Manual steps (secrets stay out of the repo):** GitLab root password, GitLab Runner registration token, Jenkins initial admin, plugins, credentials and jobs, and the Jenkins deploy key on `app-server`.
+**Manual steps (secrets stay out of the repo):** GitLab Runner registration tokens, and restoring GitLab and Jenkins from their backups (users, credentials and jobs live there). The Jenkins deploy key on `app-server` is now in the `app-host` role; it is a public key.
+
+### Rebuild from scratch (13 Nov 2026)
+
+The lab was backed up, destroyed with `terraform destroy` (21 resources) and rebuilt from this repository into the same account, following [`REBUILD.md`](REBUILD.md).
+
+| Step | Result |
+|---|---|
+| `terraform apply` | 25 resources created (lab + key pair + temporary NAT gateway) |
+| `ansible-playbook site.yml` on fresh servers | all four hosts configured; a second run reported `changed=0` on every host |
+| GitLab restore (`gitlab-backup restore` + `gitlab-secrets.json`) | 4 projects, 3 users, pipeline history back; `gitlab:doctor:secrets` reported 0 failures |
+| Jenkins restore (home folder + plugin list) | 4 jobs and their credentials back; 95 plugins installed with the Plugin Installation Manager against the pinned 2.580.1 WAR |
+| Jenkins blue-green deploy | `test-devops-app-pipeline` released build 32 to the Green slot, `/health` healthy |
+| ShopSphere | Minikube started by its playbook; GitLab CI and the Jenkins pipeline both deployed it (11 pods `Running`) |
+| Monitoring | kube-prometheus-stack 92.17.0 and blackbox 11.20.2 reinstalled; a test alert reached Slack |
+
+**Bugs the rebuild found** (none of them showed up while the code was only checked against the running servers):
+
+- **GitLab Runner pin:** current runner packages depend on `gitlab-runner-helper-images` of the exact same version, so pinning only `gitlab-runner` made apt refuse to install. Both packages are now pinned and held.
+- **Jenkins repository key:** the 2023 signing key expired in March 2026 and the LTS repository is signed with `jenkins.io-2026.key`. The role now uses the new key and refreshes the apt cache when the key changes.
+- **Jenkins deploy key:** the public key behind Jenkins' `app-server-ssh` credential had been added to `app-server` by hand. It is now in the `app-host` role.
+- **ShopSphere playbook:** it added the GitLab Runner repository without refreshing the apt cache, so the install failed on a fresh host. Fixed in the ShopSphere repository.
+
+| | |
+|---|---|
+| Second Ansible run on the rebuilt lab | ![rebuild idempotent](docs/screenshots/v2/07-ansible-rebuild-idempotent.png) |
+| Test alert from the rebuilt monitoring stack | ![rebuild slack](docs/screenshots/v2/08-rebuild-slack-alert.png) |
 
 ### Related projects
 
@@ -245,4 +275,4 @@ ansible-playbook -i inventory.ini site.yml
 
 ### Next
 
-MariaDB replication and Redis, centralised logging, and a from-scratch rebuild of the lab with Terraform and Ansible (so far the roles have been verified against the running servers only).
+MariaDB replication and Redis, centralised logging, AWS SSM Session Manager instead of SSH to the bastion, and codifying the remaining manual rebuild steps (runner registration, the CI kubeconfig on the Minikube host).
