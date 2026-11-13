@@ -5,3 +5,21 @@
   roles:
     - ssh-hardening
     - fail2ban
+
+- name: App host (Docker, Nginx blue/green, GitLab Runner)
+  hosts: app-server
+  become: true
+  roles:
+    - app-host
+
+- name: GitLab server
+  hosts: git-server
+  become: true
+  roles:
+    - gitlab
+
+- name: Jenkins server
+  hosts: jenkins-server
+  become: true
+  roles:
+    - jenkins

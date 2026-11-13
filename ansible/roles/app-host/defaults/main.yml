@@ -1,0 +1,5 @@
+---
+gitlab_runner_version: "19.4.1-1"
+app_name: production-devops-app
+app_dir: /opt/production-devops-app
+app_docker_users: [ubuntu, gitlab-runner]

@@ -1,0 +1,92 @@
+---
+# Docker + Nginx blue/green front + GitLab Runner (shell executor).
+# Runner registration needs a token, so it stays a manual step (see README).
+
+- name: Install Docker and Nginx from the Ubuntu archive
+  ansible.builtin.apt:
+    name: [docker.io, nginx, curl]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Add the GitLab Runner signing key
+  ansible.builtin.shell: >
+    set -o pipefail &&
+    curl -fsSL https://packages.gitlab.com/runner/gitlab-runner/gpgkey
+    | gpg --dearmor -o /etc/apt/keyrings/runner_gitlab-runner-archive-keyring.gpg
+  args:
+    executable: /bin/bash
+    creates: /etc/apt/keyrings/runner_gitlab-runner-archive-keyring.gpg
+
+- name: Add the GitLab Runner apt repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/runner_gitlab-runner.list
+    mode: "0644"
+    content: |
+      # this file was generated for
+      # the repository at https://packages.gitlab.com/runner/gitlab-runner/ubuntu
+
+      deb [signed-by=/etc/apt/keyrings/runner_gitlab-runner-archive-keyring.gpg] https://packages.gitlab.com/runner/gitlab-runner/ubuntu {{ ansible_distribution_release }} main
+      deb-src [signed-by=/etc/apt/keyrings/runner_gitlab-runner-archive-keyring.gpg] https://packages.gitlab.com/runner/gitlab-runner/ubuntu {{ ansible_distribution_release }} main
+  register: runner_repo
+
+- name: Install GitLab Runner (pinned)
+  ansible.builtin.apt:
+    name: "gitlab-runner={{ gitlab_runner_version }}"
+    state: present
+    update_cache: "{{ runner_repo.changed }}"
+
+- name: Hold GitLab Runner at the pinned version
+  ansible.builtin.dpkg_selections:
+    name: gitlab-runner
+    selection: hold
+
+- name: Let the deploy users run Docker
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups: docker
+    append: true
+  loop: "{{ app_docker_users }}"
+
+- name: Keep Docker, Nginx and GitLab Runner running
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop: [docker, nginx, gitlab-runner]
+
+- name: Create the app directory (Jenkins copies the source here)
+  ansible.builtin.file:
+    path: "{{ app_dir }}"
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: "0755"
+
+- name: Install the blue/green deploy and rollback scripts
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ app_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop: [deploy.sh, rollback.sh]
+
+# deploy.sh rewrites proxy_pass (13001 <-> 13002) on every release.
+# force: false = Ansible only seeds this file on a new host and never resets the live port.
+- name: Seed the Nginx site for the app
+  ansible.builtin.copy:
+    src: nginx-site.conf
+    dest: "/etc/nginx/sites-available/{{ app_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+    force: false
+  notify: Reload nginx
+
+- name: Enable the Nginx site
+  ansible.builtin.file:
+    src: "/etc/nginx/sites-available/{{ app_name }}"
+    dest: "/etc/nginx/sites-enabled/{{ app_name }}"
+    state: link
+  notify: Reload nginx

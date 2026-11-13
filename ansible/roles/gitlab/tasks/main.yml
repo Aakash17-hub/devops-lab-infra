@@ -1,0 +1,82 @@
+---
+# GitLab CE on a 4 GB host: swap first, then the pinned package, then a lean gitlab.rb.
+# The root password is set by hand on first login (see README).
+
+- name: Create swap files
+  ansible.builtin.command: "fallocate -l {{ item.size }} {{ item.path }}"
+  args:
+    creates: "{{ item.path }}"
+  loop: "{{ swap_files }}"
+  register: swap_new
+
+- name: Lock down swap file permissions
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  loop: "{{ swap_files }}"
+
+- name: Format and enable new swap files
+  ansible.builtin.shell: "mkswap {{ item.item.path }} && swapon {{ item.item.path }}"
+  loop: "{{ swap_new.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+  when: item.changed
+
+- name: Keep swap files in fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: "^{{ item.path }}\\s"
+    line: "{{ item.path }} none swap sw 0 0"
+  loop: "{{ swap_files }}"
+
+- name: Add the GitLab signing key
+  ansible.builtin.shell: >
+    set -o pipefail &&
+    curl -fsSL https://packages.gitlab.com/gitlab/gitlab-ce/gpgkey
+    | gpg --dearmor -o /etc/apt/keyrings/gitlab_gitlab-ce-archive-keyring.gpg
+  args:
+    executable: /bin/bash
+    creates: /etc/apt/keyrings/gitlab_gitlab-ce-archive-keyring.gpg
+
+- name: Add the GitLab CE apt repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/gitlab_gitlab-ce.list
+    mode: "0644"
+    content: |
+      # this file was generated for
+      # the repository at https://packages.gitlab.com/gitlab/gitlab-ce/ubuntu/{{ ansible_distribution_release }}
+
+      deb [signed-by=/etc/apt/keyrings/gitlab_gitlab-ce-archive-keyring.gpg] https://packages.gitlab.com/gitlab/gitlab-ce/ubuntu/{{ ansible_distribution_release }} {{ ansible_distribution_release }} main
+      deb-src [signed-by=/etc/apt/keyrings/gitlab_gitlab-ce-archive-keyring.gpg] https://packages.gitlab.com/gitlab/gitlab-ce/ubuntu/{{ ansible_distribution_release }} {{ ansible_distribution_release }} main
+  register: gitlab_repo
+
+- name: Install GitLab CE (pinned)
+  ansible.builtin.apt:
+    name: "gitlab-ce={{ gitlab_version }}"
+    state: present
+    update_cache: "{{ gitlab_repo.changed }}"
+  environment:
+    EXTERNAL_URL: "{{ gitlab_external_url }}"
+
+- name: Hold GitLab CE at the pinned version
+  ansible.builtin.dpkg_selections:
+    name: gitlab-ce
+    selection: hold
+
+- name: Apply the lean gitlab.rb settings
+  ansible.builtin.lineinfile:
+    path: /etc/gitlab/gitlab.rb
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  loop: "{{ gitlab_settings }}"
+  loop_control:
+    label: "{{ item.line }}"
+  notify: Reconfigure GitLab
+
+- name: Keep GitLab running
+  ansible.builtin.service:
+    name: gitlab-runsvdir
+    state: started
+    enabled: true

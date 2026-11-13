@@ -25,18 +25,20 @@ each resource does — which is also exactly what the SAA exam tests.
 - **Network segmentation** — public (DMZ-equivalent) and private
   (LAN-equivalent) subnets, with a bastion host as the only entry point,
   NAT Gateway for outbound-only private access
-- **Server hardening** — SSH key-only auth, root login disabled, role-named
-  service accounts, fail2ban — done manually first, then via reusable
+- **Server hardening** — SSH key-only auth, root login disabled, an admin
+  group, fail2ban — done manually first, then enforced on every server by
   Ansible roles
-- **Self-hosted services** — a self-hosted Git server (Gitea) and a
-  containerized app (Node.js/Express + a self-authored Dockerfile), both
-  running in the private subnet, reachable only through the bastion
-- **CI/CD** — a real, working Gitea Actions pipeline: pushing code
-  automatically rebuilds the Docker image and redeploys the container, with
-  zero manual `docker` commands after setup
-- **Infrastructure as Code** — the same topology reproduced in Terraform,
-  with a GitHub Actions job that runs `fmt`, `init` and `validate` on pull
-  requests and on pushes to `main` that change the Terraform code
+- **Self-hosted services** — a self-hosted Git server (Gitea in v1, GitLab CE
+  in v2) and a containerized app (Node.js/Express + a self-authored
+  Dockerfile), both running in the private subnet, reachable only through the
+  bastion
+- **CI/CD** — a real, working pipeline: pushing code automatically rebuilds
+  the Docker image and redeploys the container (Gitea Actions in v1, GitLab CI
+  and a Jenkins blue-green pipeline in v2)
+- **Infrastructure as Code** — the whole running lab described in Terraform
+  (adopted with `import`, no recreation) and configured by idempotent Ansible
+  roles, with a GitHub Actions job that runs `fmt`, `init` and `validate` on
+  pull requests and on pushes to `main` that change the Terraform code
 - **Debugging discipline** — every real issue hit along the way (security
   group gaps, SSH config mistakes, a corrupted config file, dynamic-IP
   lockouts) is documented with its actual root cause and fix in
@@ -70,7 +72,7 @@ This mirrors a real DMZ/LAN/VPN-segmented on-prem network I run at work: a
 single hardened entry point, everything else reachable only through it, and
 no direct internet exposure for internal services.
 
-**How CI/CD works end-to-end:** a push to the `main` branch on Gitea
+**How CI/CD works end-to-end (v1):** a push to the `main` branch on Gitea
 (git-server) triggers a Gitea Actions workflow, executed by a self-hosted
 runner living on app-server. The runner rebuilds the Docker image and
 replaces the running container — no manual `docker build`/`docker run`
@@ -81,8 +83,8 @@ after the initial setup. Full details in
 
 ```
 terraform/      VPC, subnets, security groups, EC2 instances (IaC version of the original lab)
-terraform-v2/   the whole lab as it runs today (5 instances), adopted with `import`; see its README
-ansible/        SSH-hardening and fail2ban roles (IaC version)
+terraform-v2/   the whole lab as it runs today (5 instances + Jenkins IAM role), adopted with `import`; see its README
+ansible/        roles for the whole v2 lab: hardening baseline (all hosts), app host, GitLab, Jenkins
 docs/           build logs (v1 + v2), Phase 7 Jenkins blue-green docs, screenshots
 .github/        GitHub Actions: terraform fmt/validate for terraform/ and terraform-v2/
 ```
@@ -101,14 +103,12 @@ docs/           build logs (v1 + v2), Phase 7 Jenkins blue-green docs, screensho
 ## Usage
 
 ```bash
-cd terraform
+cd terraform-v2
 terraform init
-terraform plan -var="key_name=YOUR_KEY_PAIR"
+terraform plan
 terraform apply
 
-cd ../ansible
-cp inventory.ini.example inventory.ini   # then fill in your hosts
-ansible-playbook -i inventory.ini site.yml
+# Ansible runs on the bastion; see "Ansible for every server" below
 ```
 
 Remember to `terraform destroy` when you're done — this is a demo lab, not
@@ -131,11 +131,11 @@ A second build of the lab, built manually in the AWS Console first (SAA practice
 |---|---|
 | Region / VPC | ap-southeast-1, `devops-lab-vpc` (10.0.0.0/16) |
 | `public-subnet` | 10.0.1.0/24, routes to IGW; hosts `bastion` and the NAT gateway |
-| `private-subnet` | 10.0.2.0/24, routes to NAT gateway; hosts the app and git servers |
-| `bastion` | t3.micro, only SSH entry point, restricted to my IP |
-| `app-server` | t3.micro, Docker + GitLab Runner (shell executor), runs `hello-devops-app` |
-| `git-server` | c7i-flex.large (4 GB RAM), 30 GB disk, 2 GB swap, GitLab CE (Omnibus) |
-| `jenkins-server` | t3.small, private subnet, Jenkins (deploys the app above and ShopSphere) |
+| `private-subnet` | 10.0.2.0/24, routes to NAT gateway; hosts the app, git and Jenkins servers |
+| `bastion` | t3.micro, only SSH entry point, restricted to my IP; also the Ansible control node |
+| `app-server` | t3.micro, Docker + GitLab Runner (shell executor) + Nginx blue-green front, runs `hello-devops-app` |
+| `git-server` | c7i-flex.large (4 GB RAM), 30 GB disk, 2 GB + 4 GB swap, GitLab CE (Omnibus) |
+| `jenkins-server` | t3.small, private subnet, Jenkins (deploys the app above and ShopSphere); EC2 role for ECR and EKS |
 | `shopsphere-minikube` | m7i-flex.large, public subnet, Minikube host for [ShopSphere](https://github.com/Aakash17-hub/shopsphere) |
 | Security groups | `Bastion-SG` (22 from my IP), `Private-SG` (22 and 80 from the bastion and from the Minikube host, self-referencing rule for internal traffic), `shopsphere-sg` (22 from the bastion and from the Jenkins server) |
 
@@ -143,11 +143,11 @@ The NAT gateway is deleted between sessions to save cost. The lab currently runs
 
 Private servers have no public IPs. Access is through the bastion with SSH `ProxyCommand`, and the GitLab UI is reached through an SSH tunnel (`-L 8080:localhost:80`).
 
-### Hardening (all 3 servers)
+### Hardening (bastion and all private servers, enforced by Ansible)
 
 - `labadmins` group
-- Root login and password authentication disabled via `/etc/ssh/sshd_config.d/10-hardening.conf`
-- fail2ban with an `sshd` jail
+- One SSH drop-in, `/etc/ssh/sshd_config.d/10-hardening.conf`: root login, password and keyboard-interactive auth off, key-only auth, `MaxAuthTries 3`, X11 forwarding off
+- fail2ban with an `sshd` jail (5 retries, 1 h ban)
 - Unattended kernel updates applied and servers rebooted
 
 ### CI/CD flow
@@ -197,7 +197,46 @@ Full write-up, screenshots and logs: [`docs/phase-7-jenkins/`](docs/phase-7-jenk
 
 ### Terraform for the lab as it runs today
 
-[`terraform-v2/`](terraform-v2/README.md) describes the whole current lab (VPC, subnets, route tables, three security groups, five instances). The existing resources were **imported**, not recreated: the plan showed 17 imports and 5 in-place changes (termination protection only), and a second plan after the apply showed no changes. A from-scratch rebuild has not been tested yet.
+[`terraform-v2/`](terraform-v2/README.md) describes the whole current lab (VPC, subnets, route tables, three security groups, five instances). The existing resources were **imported**, not recreated: the plan showed 17 imports and 5 in-place changes (termination protection only), and a second plan after the apply showed no changes.
+
+The Jenkins server's IAM role (`jenkins-ec2-role`: `AmazonEC2ContainerRegistryPowerUser` plus an inline policy for `eks:DescribeCluster` and `eks:ListClusters`) and its instance profile were adopted the same way later (4 imports, then no changes).
+
+A from-scratch rebuild has not been tested yet.
+
+### Ansible for every server
+
+[`ansible/`](ansible/) configures the four lab hosts (bastion, app, git and Jenkins servers). The Minikube host has its own playbook in ShopSphere.
+
+| Role | Hosts | What it manages |
+|---|---|---|
+| `ssh-hardening` | all | `labadmins` group, the SSH drop-in, `sshd -t` check before any restart |
+| `fail2ban` | all | package, `sshd` jail, service |
+| `app-host` | app-server | Docker, Nginx, the blue-green site, `deploy.sh` / `rollback.sh`, GitLab Runner (pinned and held) |
+| `gitlab` | git-server | 2 GB + 4 GB swap files, GitLab CE (pinned and held), the lean `gitlab.rb` settings |
+| `jenkins` | jenkins-server | Java 21, Jenkins (pinned and held), Docker, git, AWS CLI v2, kubectl (checksum verified) |
+
+**How it was built:** the live state of each server was read first, the roles were written to match it, then `--check --diff`, a real run, and a second run that reported `changed=0` on all four hosts.
+
+**Drift it caught:** `jenkins-server` was built later than the others and had a different SSH drop-in, no `labadmins` group and no fail2ban. The baseline roles brought it in line with the rest.
+
+**Design choices**
+
+- The bastion is the control node. Keys reach the private servers through agent forwarding (`ssh -A`), so no private key is stored on the bastion.
+- `deploy.sh` rewrites the Nginx upstream port on every release, so the role only seeds that file on a new host (`force: false`) and never resets the live port.
+- GitLab, GitLab Runner and Jenkins come from third-party repos and are pinned and held, so a rebuild gets the same versions. Ubuntu packages are not pinned, because old versions leave the Ubuntu mirrors.
+
+**Run it** (a fresh install needs outbound internet, so set `enable_nat = true` in `terraform-v2/` first):
+
+```bash
+ssh -A ubuntu@<bastion-public-ip>
+sudo apt install -y ansible-core && ansible-galaxy collection install ansible.posix
+git clone https://github.com/Aakash17-hub/devops-lab-infra && cd devops-lab-infra/ansible
+cp inventory.ini.example inventory.ini   # private IPs from `terraform output private_ips`
+ansible-playbook -i inventory.ini site.yml --check --diff
+ansible-playbook -i inventory.ini site.yml
+```
+
+**Manual steps (secrets stay out of the repo):** GitLab root password, GitLab Runner registration token, Jenkins initial admin, plugins, credentials and jobs, and the Jenkins deploy key on `app-server`.
 
 ### Related projects
 
@@ -206,4 +245,4 @@ Full write-up, screenshots and logs: [`docs/phase-7-jenkins/`](docs/phase-7-jenk
 
 ### Next
 
-MariaDB replication and Redis, centralised logging, Ansible roles for the servers (hardening, GitLab, Jenkins; only the Minikube host has a playbook so far), and a from-scratch rebuild of the lab with Terraform and Ansible.
+MariaDB replication and Redis, centralised logging, and a from-scratch rebuild of the lab with Terraform and Ansible (so far the roles have been verified against the running servers only).

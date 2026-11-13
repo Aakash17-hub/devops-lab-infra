@@ -1,0 +1,24 @@
+---
+gitlab_version: "19.4.1-ce.0"
+gitlab_external_url: "http://{{ ansible_host }}"
+
+swap_files:
+  - path: /swapfile
+    size: 2G
+  - path: /swapfile2
+    size: 4G
+
+# Lean settings so GitLab fits on a 4 GB host.
+gitlab_settings:
+  - regexp: "^external_url "
+    line: "external_url '{{ gitlab_external_url }}'"
+  - regexp: "^prometheus_monitoring\\['enable'\\]"
+    line: "prometheus_monitoring['enable'] = false"
+  - regexp: "^puma\\['worker_processes'\\]"
+    line: "puma['worker_processes'] = 0"
+  - regexp: "^sidekiq\\['concurrency'\\]"
+    line: "sidekiq['concurrency'] = 5"
+  - regexp: "^gitlab_kas\\['enable'\\]"
+    line: "gitlab_kas['enable'] = false"
+  - regexp: "^postgresql\\['shared_buffers'\\]"
+    line: "postgresql['shared_buffers'] = \"128MB\""

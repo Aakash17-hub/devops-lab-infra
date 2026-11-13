@@ -1,0 +1,80 @@
+---
+# Jenkins (pinned) on Java 21, plus the tools the pipelines call: Docker, git, AWS CLI v2, kubectl.
+# Credentials, plugins and jobs live inside Jenkins and are set up by hand (see README).
+
+- name: Install Java, git, Docker and helpers
+  ansible.builtin.apt:
+    name: [openjdk-21-jre, fontconfig, git, docker.io, unzip, curl]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Add the Jenkins signing key
+  ansible.builtin.get_url:
+    url: "{{ jenkins_key_url }}"
+    dest: /etc/apt/keyrings/jenkins-keyring.asc
+    mode: "0644"
+
+- name: Add the Jenkins apt repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/jenkins.list
+    mode: "0644"
+    content: "deb [signed-by=/etc/apt/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/\n"
+  register: jenkins_repo
+
+- name: Install Jenkins (pinned)
+  ansible.builtin.apt:
+    name: "jenkins={{ jenkins_version }}"
+    state: present
+    update_cache: "{{ jenkins_repo.changed }}"
+
+- name: Hold Jenkins at the pinned version
+  ansible.builtin.dpkg_selections:
+    name: jenkins
+    selection: hold
+
+- name: Let Jenkins run Docker
+  ansible.builtin.user:
+    name: jenkins
+    groups: docker
+    append: true
+  notify: Restart jenkins
+
+- name: Keep Docker and Jenkins running
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop: [docker, jenkins]
+
+- name: Check for AWS CLI
+  ansible.builtin.stat:
+    path: /usr/local/bin/aws
+  register: awscli
+
+- name: Install AWS CLI v2 (pinned)
+  when: not awscli.stat.exists
+  block:
+    - name: Download the AWS CLI installer
+      ansible.builtin.get_url:
+        url: "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-{{ awscli_version }}.zip"
+        dest: /tmp/awscliv2.zip
+        mode: "0644"
+
+    - name: Unpack the installer
+      ansible.builtin.unarchive:
+        src: /tmp/awscliv2.zip
+        dest: /tmp
+        remote_src: true
+
+    - name: Run the installer
+      ansible.builtin.command: /tmp/aws/install
+      args:
+        creates: /usr/local/bin/aws
+
+- name: Install kubectl (pinned, checksum verified)
+  ansible.builtin.get_url:
+    url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+    checksum: "sha256:https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl.sha256"
+    dest: /usr/local/bin/kubectl
+    mode: "0755"
