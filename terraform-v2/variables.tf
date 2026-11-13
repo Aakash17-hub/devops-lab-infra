@@ -40,12 +40,6 @@ variable "admin_cidr" {
   type        = string
 }
 
-variable "jenkins_instance_profile" {
-  description = "Existing instance profile for the Jenkins server (not managed here yet)."
-  type        = string
-  default     = "jenkins-ec2-profile"
-}
-
 variable "protect_instances" {
   description = "Turn on EC2 termination protection. Set to false and apply before destroying."
   type        = bool

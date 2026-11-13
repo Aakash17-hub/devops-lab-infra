@@ -48,7 +48,7 @@ locals {
       sg        = aws_security_group.private.id
       volume_gb = 16
       public_ip = false
-      profile   = var.jenkins_instance_profile
+      profile   = aws_iam_instance_profile.jenkins.name
     }
   }
 }
