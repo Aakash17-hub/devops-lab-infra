@@ -1,36 +1,39 @@
 ---
-# Mirrors the SSH hardening checklist applied across the on-prem servers:
-# role-named user in a sudo-capable group, key-only auth, root login and
-# password auth disabled, then a restart + orphaned-account check.
+# Key-only SSH and no root login, written as one drop-in on every host.
+# Ubuntu reads /etc/ssh/sshd_config.d/*.conf before the main file, so the drop-in wins.
 
-- name: Ensure a role-named admin group exists
-  group:
+- name: Ensure the admin group exists
+  ansible.builtin.group:
     name: labadmins
     state: present
 
-- name: Create role-named service account
-  user:
-    name: "{{ service_account_name | default('labadmin') }}"
-    groups: labadmins,sudo
-    shell: /bin/bash
-    create_home: true
+- name: Add the login user to the admin group
+  ansible.builtin.user:
+    name: "{{ ansible_user }}"
+    groups: labadmins
+    append: true
 
-- name: Install the admin's public key for key-only auth
-  authorized_key:
-    user: "{{ service_account_name | default('labadmin') }}"
-    key: "{{ lookup('file', ssh_public_key_path) }}"
-    state: present
+- name: Write the SSH hardening drop-in
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/10-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      PermitRootLogin no
+      PasswordAuthentication no
+      PubkeyAuthentication yes
+      KbdInteractiveAuthentication no
+      MaxAuthTries 3
+      X11Forwarding no
+  notify: Restart ssh
 
-- name: Disable root login over SSH
-  lineinfile:
-    path: /etc/ssh/sshd_config
-    regexp: '^#?PermitRootLogin'
-    line: 'PermitRootLogin no'
-  notify: restart sshd
+- name: Remove the older drop-in (only jenkins-server had it)
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config.d/99-hardening.conf
+    state: absent
+  notify: Restart ssh
 
-- name: Disable password authentication
-  lineinfile:
-    path: /etc/ssh/sshd_config
-    regexp: '^#?PasswordAuthentication'
-    line: 'PasswordAuthentication no'
-  notify: restart sshd
+- name: Check the full sshd config before any restart
+  ansible.builtin.command: /usr/sbin/sshd -t
+  changed_when: false

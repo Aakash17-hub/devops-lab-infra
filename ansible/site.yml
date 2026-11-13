@@ -1,5 +1,5 @@
 ---
-- name: Harden all lab hosts
+- name: Baseline hardening for every lab host
   hosts: all
   become: true
   roles:

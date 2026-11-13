@@ -1,24 +1,26 @@
 ---
 - name: Install fail2ban
-  apt:
+  ansible.builtin.apt:
     name: fail2ban
     state: present
     update_cache: true
+    cache_valid_time: 3600
 
-- name: Configure sshd jail
-  copy:
+- name: Configure the sshd jail
+  ansible.builtin.copy:
     dest: /etc/fail2ban/jail.local
+    owner: root
+    group: root
+    mode: "0644"
     content: |
       [sshd]
       enabled = true
-      port    = ssh
       maxretry = 5
-      bantime  = 1800
-      findtime = 600
-  notify: restart fail2ban
+      bantime = 1h
+  notify: Restart fail2ban
 
-- name: Ensure fail2ban is enabled and running
-  service:
+- name: Keep fail2ban enabled and running
+  ansible.builtin.service:
     name: fail2ban
     state: started
     enabled: true

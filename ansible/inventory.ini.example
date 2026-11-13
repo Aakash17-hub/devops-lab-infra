@@ -1,12 +1,15 @@
-# Copy to inventory.ini and fill in the IPs from `terraform output`
-# ansible_ssh_common_args routes traffic for private hosts through the bastion
+# Ansible runs on the bastion (control node). Copy this file to inventory.ini.
+# Private IPs: `terraform output private_ips` in terraform-v2.
+# Keys reach the private hosts through agent forwarding (ssh -A); no key is stored on the bastion.
 
-[bastion]
-bastion ansible_host=BASTION_PUBLIC_IP ansible_user=ubuntu
+[bastion_host]
+bastion ansible_connection=local
 
 [private]
-app-server ansible_host=APP_SERVER_PRIVATE_IP ansible_user=ubuntu ansible_ssh_common_args='-o ProxyJump=ubuntu@BASTION_PUBLIC_IP'
-git-server ansible_host=GIT_SERVER_PRIVATE_IP ansible_user=ubuntu ansible_ssh_common_args='-o ProxyJump=ubuntu@BASTION_PUBLIC_IP'
+app-server     ansible_host=APP_PRIVATE_IP
+git-server     ansible_host=GIT_PRIVATE_IP
+jenkins-server ansible_host=JENKINS_PRIVATE_IP
 
 [all:vars]
-ansible_ssh_private_key_file=~/.ssh/YOUR_KEY.pem
+ansible_user=ubuntu
+ansible_python_interpreter=/usr/bin/python3
