@@ -3,3 +3,5 @@ gitlab_runner_version: "19.4.1-1"
 app_name: production-devops-app
 app_dir: /opt/production-devops-app
 app_docker_users: [ubuntu, gitlab-runner]
+# Public half of the Jenkins app-server-ssh credential (a public key is safe to commit).
+jenkins_deploy_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHyKlOeBRkov3/QWuHnnBuWyFzKMEr5+2+BwiXi7cN5h jenkins-app-deploy"

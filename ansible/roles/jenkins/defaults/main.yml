@@ -2,6 +2,6 @@
 jenkins_version: "2.580.1"
 # Jenkins rotates its repo signing key from time to time;
 # check https://pkg.jenkins.io/debian-stable/ before building a fresh host.
-jenkins_key_url: https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
+jenkins_key_url: https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key
 awscli_version: "2.38.2"
 kubectl_version: "v1.34.11"

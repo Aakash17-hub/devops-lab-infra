@@ -14,6 +14,7 @@
     url: "{{ jenkins_key_url }}"
     dest: /etc/apt/keyrings/jenkins-keyring.asc
     mode: "0644"
+  register: jenkins_key
 
 - name: Add the Jenkins apt repository
   ansible.builtin.copy:
@@ -26,7 +27,7 @@
   ansible.builtin.apt:
     name: "jenkins={{ jenkins_version }}"
     state: present
-    update_cache: "{{ jenkins_repo.changed }}"
+    update_cache: "{{ jenkins_repo.changed or jenkins_key.changed }}"
 
 - name: Hold Jenkins at the pinned version
   ansible.builtin.dpkg_selections:

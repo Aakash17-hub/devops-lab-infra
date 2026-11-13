@@ -32,14 +32,17 @@
 
 - name: Install GitLab Runner (pinned)
   ansible.builtin.apt:
-    name: "gitlab-runner={{ gitlab_runner_version }}"
+    name:
+      - "gitlab-runner={{ gitlab_runner_version }}"
+      - "gitlab-runner-helper-images={{ gitlab_runner_version }}"
     state: present
     update_cache: "{{ runner_repo.changed }}"
 
 - name: Hold GitLab Runner at the pinned version
   ansible.builtin.dpkg_selections:
-    name: gitlab-runner
+    name: "{{ item }}"
     selection: hold
+  loop: [gitlab-runner, gitlab-runner-helper-images]
 
 - name: Let the deploy users run Docker
   ansible.builtin.user:
@@ -90,3 +93,9 @@
     dest: "/etc/nginx/sites-enabled/{{ app_name }}"
     state: link
   notify: Reload nginx
+
+- name: Let Jenkins log in as the deploy user (app-server-ssh credential)
+  ansible.posix.authorized_key:
+    user: ubuntu
+    key: "{{ jenkins_deploy_public_key }}"
+    state: present
