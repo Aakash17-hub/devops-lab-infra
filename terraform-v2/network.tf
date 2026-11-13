@@ -17,7 +17,7 @@ resource "aws_internet_gateway" "lab" {
 resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.lab.id
   cidr_block              = var.public_subnet_cidr
-  availability_zone       = var.az
+  availability_zone       = local.az
   map_public_ip_on_launch = false
 
   tags = {
@@ -28,7 +28,7 @@ resource "aws_subnet" "public" {
 resource "aws_subnet" "private" {
   vpc_id                  = aws_vpc.lab.id
   cidr_block              = var.private_subnet_cidr
-  availability_zone       = var.az
+  availability_zone       = local.az
   map_public_ip_on_launch = false
 
   tags = {

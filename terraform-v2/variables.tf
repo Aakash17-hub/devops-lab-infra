@@ -5,9 +5,9 @@ variable "region" {
 }
 
 variable "az" {
-  description = "Availability zone of both subnets."
+  description = "Availability zone of both subnets. Empty = the region's first AZ."
   type        = string
-  default     = "ap-southeast-1a"
+  default     = null
 }
 
 variable "vpc_cidr" {
@@ -26,18 +26,26 @@ variable "private_subnet_cidr" {
 }
 
 variable "ami_id" {
-  description = "Ubuntu 24.04 AMI used by all instances. Set in terraform.tfvars (not committed)."
+  description = "AMI for all instances. Empty = latest Canonical Ubuntu 24.04."
   type        = string
+  default     = null
 }
 
 variable "key_name" {
-  description = "Name of an existing EC2 key pair. Set in terraform.tfvars (not committed)."
+  description = "Name of the key pair Terraform creates."
+  type        = string
+  default     = "devops-lab-key"
+}
+
+variable "public_key_path" {
+  description = "Public half of your SSH key (ssh-keygen -y -f key.pem). Set in terraform.tfvars."
   type        = string
 }
 
 variable "admin_cidr" {
-  description = "Your public IP as a /32. Only this address can reach the bastion on SSH. Set in terraform.tfvars (not committed)."
+  description = "IP allowed to SSH to the bastion, as a /32. Empty = your current public IP, detected on every plan."
   type        = string
+  default     = null
 }
 
 variable "protect_instances" {

@@ -1,4 +1,7 @@
-# Copy to terraform.tfvars (gitignored) and fill in.
-ami_id     = "ami-xxxxxxxxxxxxxxxxx" # Ubuntu 24.04 in ap-southeast-1
-key_name   = "your-key-pair-name"
-admin_cidr = "203.0.113.10/32"       # your public IP
+# Copy to terraform.tfvars (gitignored). Everything else has a working default.
+public_key_path = "~/.ssh/devops-lab-key.pub" # ssh-keygen -y -f your-key.pem > this file
+
+# Optional overrides:
+# admin_cidr = "203.0.113.10/32" # default: your current public IP, detected on every plan
+# ami_id     = "ami-..."         # default: latest Ubuntu 24.04 from Canonical
+# region     = "ap-southeast-1"

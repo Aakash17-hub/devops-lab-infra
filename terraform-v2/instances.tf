@@ -56,11 +56,11 @@ locals {
 resource "aws_instance" "lab" {
   for_each = local.instances
 
-  ami                         = var.ami_id
+  ami                         = local.ami_id
   instance_type               = each.value.type
   subnet_id                   = each.value.subnet
   private_ip                  = cidrhost(each.value.cidr, local.hosts[each.key])
-  key_name                    = var.key_name
+  key_name                    = aws_key_pair.lab.key_name
   vpc_security_group_ids      = [each.value.sg]
   associate_public_ip_address = each.value.public_ip
   iam_instance_profile        = each.value.profile
